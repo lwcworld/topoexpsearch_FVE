@@ -1,4 +1,9 @@
 std_msgs/String NN_jsonstr
 int32 node
+std_msgs/String p_E
+int32 N_c
+int32 M
+int32 K
+float32 gamma
 ---
-std_msgs/String marginal_probs
+float32 p_o

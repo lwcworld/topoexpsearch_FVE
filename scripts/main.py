@@ -29,20 +29,20 @@ class Frontier_Value_Estimation():
 
     def get_G_bar(self, G, v, c_bar):
         v_bar = len(G.nodes())  # hypothesis node
-        G_bar = copy.deepcopy(NN)
+        G_bar = copy.deepcopy(G)
         G_bar.add_nodes_from([(v_bar, {'type': c_bar})])
         G_bar.add_edges_from([(v, v_bar)])
 
         return G_bar
 
     def FVE_v(self, G, v, P_E, K, M, N_c, gamma):
-        p_E = 0
+        p_o = 0
 
         if K>=1:
             # rollout 1
             MP_0 = self.srv_MBM(G, v)
             p_E_0 = sum([a*b for a, b in zip(MP_0[1:],P_E)])
-            p_E = p_E + p_E_0
+            p_o = p_o + p_E_0
 
         if K>=2:
             # rollout 2
@@ -51,6 +51,8 @@ class Frontier_Value_Estimation():
             MP_1_list = []
             for c_bar in C_1:
                 G_1_i = self.get_G_bar(G, v, c_bar)
+                print(G_1_i.nodes())
+                print(G_1_i.edges())
                 v_1_i = len(G_1_i.nodes()) - 1
                 MP_1_c_bar = [a*MP_0[c_bar] for a in self.srv_MBM(G_1_i, v_1_i)]
                 G_1_list.append(G_1_i)
@@ -60,7 +62,7 @@ class Frontier_Value_Estimation():
                 MP_1 = [a+b for a,b in zip(MP_1 , MP_1_c_bar)]
             p_E_1 = sum([a * b for a, b in zip(MP_1[1:], P_E)])
 
-            p_E = p_E + gamma*p_E_1
+            p_o = p_o + gamma*p_E_1
 
         if K>=3:
             # rollout 3
@@ -70,10 +72,12 @@ class Frontier_Value_Estimation():
             for i, (MP_1_i, G_1_i) in enumerate(zip(MP_1_list, G_1_list)):
                 C_2_i = np.argsort(MP_1_i)[::-1][0:M]
                 C_2_list.append(C_2_i)
-                v = len(G_1_i.nodes())+1
+                v = len(G_1_i.nodes())
                 for c_bar in C_2_i:
                     G_2_i_j = self.get_G_bar(G_1_i, v, c_bar)
                     v_2_i_j = len(G_2_i_j.nodes()) - 1
+
+                    self.srv_MBM(G_2_i_j, v_2_i_j)
                     MP_2_i_j_c_bar = [a * MP_1_i[c_bar] for a in self.srv_MBM(G_2_i_j, v_2_i_j)]
                     G_2_list[i].append(G_2_i_j)
                     MP_2_list[i].append(MP_2_i_j_c_bar)
@@ -83,10 +87,9 @@ class Frontier_Value_Estimation():
                     MP_2 = [a + b for a, b in zip(MP_2, MP_2_i_j)]
             p_E_2 = sum([a * b for a, b in zip(MP_2[1:], P_E)])
 
-            p_E = p_E + gamma**2 * p_E_2
+            p_o = p_o + gamma**2 * p_E_2
 
-        return p_E
-
+        return p_o
 
 NN = nx.Graph()
 NN.add_nodes_from([(0, {'pos': (-28., 0.), 'type': 4, 'is_robot': True, 'to_go': False, 'value': 0}),
@@ -96,7 +99,6 @@ NN.add_nodes_from([(0, {'pos': (-28., 0.), 'type': 4, 'is_robot': True, 'to_go':
                    (4, {'pos': (-21., 0.), 'type': 4, 'is_robot': False, 'to_go': True, 'value': 0.1})])
 NN.add_edges_from([(0, 1), (0,2), (0, 3), (0, 4)])
 v = 0
-
 
 FVE = Frontier_Value_Estimation()
 # p_E : [1xN_c] probability vector
@@ -112,4 +114,5 @@ N_c = 5
 
 # discount factor
 gamma = 0.8
-FVE.FVE_v(NN, v, p_E, K, M, N_c, gamma)
+p_E = FVE.FVE_v(NN, v, p_E, K, M, N_c, gamma)
+print(p_E)
