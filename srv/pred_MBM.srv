@@ -1,0 +1,4 @@
+std_msgs/String NN_jsonstr
+int32 node
+---
+std_msgs/String marginal_probs
