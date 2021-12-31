@@ -2,7 +2,7 @@
 
 import networkx as nx
 import rospy
-from topoexpsearch_MBM.srv import pred_MBM
+from topoexpsearch_MBM.srv import pred_FSE
 from topoexpsearch_FVE.srv import pred_FVE
 from std_msgs.msg import String
 import ast
@@ -12,11 +12,11 @@ from ast import literal_eval
 
 class Frontier_Value_Estimation():
     def __init__(self):
-        rospy.wait_for_service('pred_MBM', timeout=3)
-        self.srv_pred_MBM = rospy.ServiceProxy('pred_MBM', pred_MBM)
+        rospy.wait_for_service('FSE')
+        self.srv_pred_FSE = rospy.ServiceProxy('FSE', pred_FSE)
         print('start')
 
-    def srv_MBM(self, G, v):
+    def srv_PI(self, G, v):
         # convert NN to dict
         dict_G = {}
         E = [[v1, v2] for (v1, v2) in list(nx.edges(G))]
@@ -28,7 +28,7 @@ class Frontier_Value_Estimation():
         msg_NN_jsonstr.data = str(dict_G)
         node = v
 
-        output = self.srv_pred_MBM(msg_NN_jsonstr, node)
+        output = self.srv_pred_FSE(msg_NN_jsonstr, node)
         MP = ast.literal_eval(output.marginal_probs.data)
         return MP
 
@@ -48,8 +48,15 @@ class Frontier_Value_Estimation():
             features = NN_json["features"]
         features = {int(k): v for k, v in features.items()}
 
+        if "to_go" in NN_json.keys():
+            to_go = NN_json["to_go"]
+        to_go = {int(k): v for k, v in to_go.items()}
+
         for k, v in features.items():
             G.nodes[k]['type'] = v
+
+        for k, v in to_go.items():
+            G.nodes[k]['to_go'] = v
 
         v = msg.node # interset node
         p_E = literal_eval(msg.p_E.data)
@@ -64,11 +71,12 @@ class Frontier_Value_Estimation():
         p_o = 0
         if K>=1:
             # rollout 1
-            MP_0 = self.srv_MBM(G, v)
-            p_E_0 = sum([a*b for a, b in zip(MP_0[1:],p_E)])
+            MP_0 = self.srv_PI(G, v)
+            p_E_0 = gamma*sum([a*b for a, b in zip(MP_0[1:],p_E)]) + bool(G.nodes[v]['to_go']) * p_E[int(G.nodes[v]['type']) - 1]
             p_o = p_o + p_E_0
 
         if K>=2:
+            print('314214')
             # rollout 2
             C_1 = np.argsort(MP_0)[::-1][0:M]
             G_1_list = []
@@ -76,15 +84,14 @@ class Frontier_Value_Estimation():
             for c_bar in C_1:
                 G_1_i = self.get_G_bar(G, v, c_bar)
                 v_1_i = len(G_1_i.nodes()) - 1
-                MP_1_c_bar = [a*MP_0[c_bar] for a in self.srv_MBM(G_1_i, v_1_i)]
+                MP_1_c_bar = [a*MP_0[c_bar] for a in self.srv_PI(G_1_i, v_1_i)]
                 G_1_list.append(G_1_i)
                 MP_1_list.append(MP_1_c_bar)
             MP_1 = [0 for i in range(N_c+1)]
             for MP_1_c_bar in MP_1_list:
                 MP_1 = [a+b for a,b in zip(MP_1 , MP_1_c_bar)]
             p_E_1 = sum([a * b for a, b in zip(MP_1[1:], p_E)])
-
-            p_o = p_o + gamma*p_E_1
+            p_o = p_o + gamma**2 *p_E_1
 
         if K>=3:
             # rollout 3
@@ -98,7 +105,7 @@ class Frontier_Value_Estimation():
                 for c_bar in C_2_i:
                     G_2_i_j = self.get_G_bar(G_1_i, v, c_bar)
                     v_2_i_j = len(G_2_i_j.nodes()) - 1
-                    MP_2_i_j_c_bar = [a * MP_1_i[c_bar] for a in self.srv_MBM(G_2_i_j, v_2_i_j)]
+                    MP_2_i_j_c_bar = [a * MP_1_i[c_bar] for a in self.srv_PI(G_2_i_j, v_2_i_j)]
                     G_2_list[i].append(G_2_i_j)
                     MP_2_list[i].append(MP_2_i_j_c_bar)
             MP_2 = [0 for i in range(N_c+1)]
@@ -106,14 +113,13 @@ class Frontier_Value_Estimation():
                 for MP_2_i_j in MP_2_i:
                     MP_2 = [a + b for a, b in zip(MP_2, MP_2_i_j)]
             p_E_2 = sum([a * b for a, b in zip(MP_2[1:], p_E)])
-
-            p_o = p_o + gamma**2 * p_E_2
+            p_o = p_o + gamma**3 * p_E_2
 
         return p_o
 
 if __name__ == '__main__':
-    rospy.init_node('abc')
+    rospy.init_node('srv_FVE_FSE')
+    print('start')
     FVE = Frontier_Value_Estimation()
-
-    s = rospy.Service('pred_FVE', pred_FVE, FVE.FVE_v)
+    s = rospy.Service('FVE_FSE', pred_FVE, FVE.FVE_v)
     rospy.spin()
